@@ -1,4 +1,9 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Gold Stock Ledger</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -128,6 +133,17 @@ body:not(.in) header,body:not(.in) main{display:none}
 .gate-brand{font-size:22px;font-weight:700}
 .gate-brand small{font-weight:500;color:var(--ink2);font-size:14px;margin-left:6px}
 #gate[hidden]{display:none}
+.invalid{border-color:var(--bad)!important;background:var(--out-soft)!important}
+label{position:relative}
+.brrows{display:grid;gap:8px;margin-bottom:8px;max-width:640px}
+.brrow{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto;gap:10px;align-items:end}
+.brrow .btn{margin-bottom:4px}
+p .mlink{position:static}
+.mlink{position:absolute;right:0;top:0;font:inherit;font-size:11px;color:var(--gold);background:none;border:0;padding:0 2px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+#modal{position:fixed;inset:0;z-index:50;background:rgba(20,20,24,.45);display:grid;place-items:center;padding:16px}
+#modal[hidden]{display:none}
+.mbox{width:100%;max-width:560px;max-height:90vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--gold);border-radius:6px;padding:20px}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
 .pw{position:relative;display:block}
 .pw input{padding-right:40px}
 .eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:32px;height:30px;border:0;background:none;color:var(--ink2);cursor:pointer;border-radius:4px}
@@ -135,7 +151,8 @@ body:not(.in) header,body:not(.in) main{display:none}
 .gate-form{display:grid;gap:12px}
 .gate-form .btn{padding:9px 14px}
 </style>
-
+</head>
+<body>
 <header>
   <div class="wrap">
     <div class="hrow">
@@ -147,9 +164,10 @@ body:not(.in) header,body:not(.in) main{display:none}
       <button role="tab" data-v="lots" aria-selected="false">Receive Gold</button>
       <button role="tab" data-v="check" aria-selected="false">Formulas</button>
       <button role="tab" data-v="pd" aria-selected="false">P/D by Brand</button>
-      <button role="tab" data-v="move" aria-selected="false">Sell to SG / Vaulting</button>
+      <button role="tab" data-v="move" aria-selected="false">Sell / Vaulting</button>
       <button role="tab" data-v="bars" aria-selected="false">Bar Serials</button>
       <button role="tab" data-v="ledger" aria-selected="false">Movement Ledger</button>
+      <button role="tab" data-v="master" aria-selected="false">Master Data</button>
       <button role="tab" data-v="setup" aria-selected="false">Settings</button>
     </nav>
   </div>
@@ -157,17 +175,25 @@ body:not(.in) header,body:not(.in) main{display:none}
 
 <main class="wrap" id="app"></main>
 <div id="gate" hidden></div>
+<div id="modal" hidden></div>
 
 <script>
-const BRANDS=[
- ["PAMP","LBMA (Swiss)",1],["PAMP W/C","LBMA (Swiss)",1],["PAMP 100g","LBMA (Swiss)",0.1],
- ["PERTH","LBMA (Australia)",1],["PERTH W/C","LBMA (Australia)",1],
- ["ARGOR","LBMA (Swiss)",1],["ARGOR W/C","LBMA (Swiss)",1],
+// the 9 brands in IMPORT sheet columns V–AD (col = position, kept when a brand is renamed)
+const IMPORT_BRANDS=[["PAMP","LBMA (Swiss)",1],["PAMP W/C","LBMA (Swiss)",1],["PAMP 100g","LBMA (Swiss)",0.1],
+ ["PERTH","LBMA (Australia)",1],["PERTH W/C","LBMA (Australia)",1],["ARGOR","LBMA (Swiss)",1],["ARGOR W/C","LBMA (Swiss)",1],
  ["Heraeus HK","LBMA (HK)",1],["Heraeus HK W/C","LBMA (HK)",1]];
-const BNAMES=BRANDS.map(b=>b[0]); const BARKG=Object.fromEntries(BRANDS.map(b=>[b[0],b[2]]));
+let BRANDS=[],BNAMES=[],BARKG={},LOCO_STD={},VAULT_TYPES=new Set();
+const DEFAULT_MASTER=()=>({suppliers:[],brands:IMPORT_BRANDS.map((b,i)=>({name:b[0],origin:b[1],bar:b[2],col:i})),
+  locos:[{name:"BKK",fix:0.10,frt:0},{name:"HK",fix:0,frt:0.3}],types:[{name:"LBMA",vault:true},{name:"NGD",vault:false},{name:"DGD",vault:false}],
+  logistics:[{name:"BRINKS"},{name:"MALCA"}],customers:[],buyers:[{name:"Gold Star Trading Pte. Ltd. (SG)"}]});
+function syncMaster(s=S){const M=s.master;BRANDS=M.brands.map(b=>[b.name,b.origin||"",+b.bar||1]);BNAMES=BRANDS.map(b=>b[0]);BARKG=Object.fromEntries(BRANDS.map(b=>[b[0],b[2]]));
+  LOCO_STD=Object.fromEntries(M.locos.map(l=>[l.name,{fix:+l.fix||0,frt:+l.frt||0}]));VAULT_TYPES=new Set(M.types.filter(t=>t.vault).map(t=>t.name.toUpperCase()))}
+// add any value found in the records that is missing from the lists
+function deriveMaster(s){const M=s.master,add=(k,n,extra={})=>{if(n&&!M[k].some(x=>x.name===n))M[k].push({name:n,...extra})};
+  s.lots.forEach(l=>{add("suppliers",l.supplier);add("locos",l.loco,{fix:0,frt:0});add("types",l.type,{vault:false});add("logistics",l.logistic);Object.keys(l.brands).forEach(b=>add("brands",b,{origin:"",bar:1}))});
+  s.moves.forEach(m=>{add("customers",m.customer);if(m.buyer)add("buyers",m.buyer)});syncMaster(s)}
 const OZ=32.148;
-const LOCO_STD={BKK:{fix:0.10,frt:0},HK:{fix:0,frt:0.3}};
-const LOCS={MAIN:"Main Stock",VAULTING:"Vaulting (customer)",SG:"Sold to SG"};
+const LOCS={MAIN:"Main Stock",VAULTING:"Vaulting (customer)",SG:"Sold"};
 const SG_NAME="Gold Star Trading Pte. Ltd. (SG)";
 const KEY="gsStock_v1";
 
@@ -194,13 +220,14 @@ const SEED=[
 const seedLot=r=>({date:r[0],supplier:r[1],kg:r[2],loco:r[3],price:r[4],pd:r[5],fix:r[6],frt:r[7],inv:r[8],piRec:r[9],m:r[10],ciNo:r[11],ciRec:r[12],arrived:r[13],logistic:r[14],mawb:r[15],type:r[16],brands:r[17],src:"IMPORT"});
 
 const uid=p=>p+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-3);
-function freshState(){const s={v:3,lots:[],moves:[],bars:[],rules:{}};SEED.forEach(r=>addLot(s,seedLot(r)));return s}
+function freshState(){const s={v:4,lots:[],moves:[],bars:[],rules:{},master:DEFAULT_MASTER()};syncMaster(s);SEED.forEach(r=>addLot(s,seedLot(r)));deriveMaster(s);return s}
 function addLot(s,l){
   l.id=uid("L");l.by??=who(); s.lots.push(l);
   for(const [b,kg] of Object.entries(l.brands)) if(kg>0)
     s.moves.push({by:l.by,id:uid("M"),kind:"IN",date:l.arrived||l.date,brand:b,kg:+kg,from:null,to:"MAIN",ref:l.inv,lotId:l.id,serials:[],note:l.supplier});
 }
 function migrate(s){
+  if(!s.master)s.master=DEFAULT_MASTER();syncMaster(s);
   if(!s.v||s.v<2){
     const loc=l=>l==="VAULT"?"VAULTING":(l&&l.startsWith("CO:"))?"SG":l;
     s.moves.forEach(m=>{m.from=loc(m.from);m.to=loc(m.to);if(m.kind==="VAULT")m.kind="VAULTING";if(m.kind==="TRANSFER")m.kind="SALE"});
@@ -215,7 +242,8 @@ function migrate(s){
     });
     s.rules=s.rules||{};
   }
-  s.v=3;return s;
+  if(s.v<4)deriveMaster(s);
+  s.v=4;syncMaster(s);return s;
 }
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
@@ -228,7 +256,7 @@ const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const r3=n=>Math.round(n*1000)/1000, r2=n=>Math.round(n*100)/100;
 const fkg=n=>(+n||0).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:3});
 const fusd=n=>(+n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-const fsign=n=>(n>0?"+":"")+fusd(n);
+const fsign=n=>{n=Math.abs(n)<0.005?0:n;return (n>0?"+":"")+fusd(n)};
 const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const fdate=d=>{if(!d)return"—";const[y,m,dd]=d.split("-");return `${+dd}-${MON[+m-1]}-${y.slice(2)}`};
 const today=()=>new Date(Date.now()+7*3600e3).toISOString().slice(0,10);
@@ -238,7 +266,7 @@ function bal(loc,brand){let t=0;for(const m of S.moves){if(brand&&m.brand!==bran
 function barsAt(loc,brand){return S.bars.filter(b=>b.loc===loc&&(!brand||b.brand===brand))}
 function serialKg(loc,brand){return r3(barsAt(loc,brand).reduce((a,b)=>a+b.kg,0))}
 const lotOf=id=>S.lots.find(x=>x.id===id);
-const isLBMA=bar=>(lotOf(bar.lotId)?.type||"").toUpperCase()==="LBMA";
+const isLBMA=bar=>VAULT_TYPES.has((lotOf(bar.lotId)?.type||"").toUpperCase()); // TYPE marked "Allowed in Vaulting"
 const lotLabel=id=>{const l=lotOf(id);return l?`${fdate(l.date)} · ${l.supplier} · ${l.inv}`:"—"};
 const locCls=l=>l==="MAIN"?"c-main":l==="VAULTING"?"c-vault":"c-out";
 const suppliers=()=>[...new Set(S.lots.map(l=>l.supplier))].sort();
@@ -278,21 +306,158 @@ const allIssues=()=>S.lots.flatMap(l=>calc(l).iss.map(i=>({...i,l})));
 // kg-weighted landed cost per oz for a brand, across all received lots
 function avgCost(brand){let w=0,t=0;for(const l of S.lots){const k=+l.brands[brand]||0;if(!k)continue;w+=k;t+=k*calc(l).landed}return w?t/w:0}
 
+// ---------- master data (dropdown lists, editable in the Master Data tab) ----------
+const MK={
+  suppliers:{label:"Suppliers",one:"supplier",fields:[["name","Name"]]},
+  brands:{label:"Brands",one:"brand",fields:[["name","Brand"],["origin","Origin"],["bar","Bar weight (kg)","number"]]},
+  locos:{label:"Loco",one:"loco",fields:[["name","Loco"],["fix","Std Fixing (USD/oz)","number"],["frt","Std Freight (USD/oz)","number"]]},
+  types:{label:"TYPE",one:"type",fields:[["name","TYPE"],["vault","Allowed in Vaulting","check"]]},
+  logistics:{label:"Logistics",one:"logistics company",fields:[["name","Company"]]},
+  customers:{label:"Customers",one:"customer",fields:[["name","Name"],["code","Code"]]},
+  buyers:{label:"Buyers",one:"buyer",fields:[["name","Company"]]}};
+const mnames=k=>S.master[k].map(x=>x.name);
+// how many records use a value — a used value can be renamed (everywhere at once) but not deleted
+function usage(k,n){switch(k){
+  case"suppliers":return S.lots.filter(l=>l.supplier===n).length;
+  case"brands":return S.lots.filter(l=>+l.brands[n]>0).length+S.moves.filter(m=>m.brand===n&&m.kind!=="IN").length;
+  case"locos":return S.lots.filter(l=>l.loco===n).length;
+  case"types":return S.lots.filter(l=>l.type===n).length;
+  case"logistics":return S.lots.filter(l=>l.logistic===n).length;
+  case"customers":return S.moves.filter(m=>m.customer===n).length;
+  case"buyers":return S.moves.filter(m=>(m.buyer||(m.kind==="SALE"?SG_NAME:""))===n).length}return 0}
+function renameEverywhere(k,a,b){if(a===b)return;
+  if(k==="suppliers"){S.lots.forEach(l=>{if(l.supplier===a)l.supplier=b});S.moves.forEach(m=>{if(m.kind==="IN"&&m.note===a)m.note=b})}
+  if(k==="brands"){S.lots.forEach(l=>{if(a in l.brands){l.brands[b]=l.brands[a];delete l.brands[a]}});S.moves.forEach(m=>{if(m.brand===a)m.brand=b});S.bars.forEach(x=>{if(x.brand===a)x.brand=b});if(pdSel.b===a)pdSel.b=b}
+  if(k==="locos")S.lots.forEach(l=>{if(l.loco===a)l.loco=b});
+  if(k==="types")S.lots.forEach(l=>{if(l.type===a)l.type=b});
+  if(k==="logistics")S.lots.forEach(l=>{if(l.logistic===a)l.logistic=b});
+  if(k==="customers"){S.moves.forEach(m=>{if(m.customer===a)m.customer=b});S.bars.forEach(x=>{if(x.customer===a)x.customer=b})}
+  if(k==="buyers")S.moves.forEach(m=>{if(m.kind==="SALE"&&(m.buyer||SG_NAME)===a)m.buyer=b});
+}
+// <select> fed from a master list; "+ Add new…" opens a quick-add box without leaving the form
+function msel(id,k,{req=false,add=true,blank=""}={}){
+  return `<select id="${id}" data-kind="${k}" ${req?"required":""}>${req||blank?`<option value="">${blank||"— Select —"}</option>`:""}${mnames(k).map(n=>`<option>${esc(n)}</option>`).join("")}${add?`<option value="__add">+ Add new ${MK[k].one}…</option>`:""}</select>`}
+const mlink=k=>`<button type="button" class="mlink" data-manage="${k}">edit list</button>`;
+function ensureOpt(sel,val){if(val&&![...sel.options].some(o=>o.value===val)){const o=document.createElement("option");o.textContent=val;sel.insertBefore(o,sel.querySelector('option[value="__add"]'))}sel.value=val??""}
+function readItem(k,pre){const o={};for(const [f,,t] of MK[k].fields){const el=document.getElementById(pre+f);o[f]=t==="check"?el.checked:t==="number"?(+el.value||0):el.value.trim()}if(k==="brands"&&!(o.bar>0))o.bar=1;return o}
+function itemErr(k,o,skip){if(!o.name)return`Enter a ${MK[k].one} name.`;
+  if(S.master[k].some((x,i)=>i!==skip&&x.name.toLowerCase()===o.name.toLowerCase()))return`${o.name} is already in the list.`;return""}
+function itemFields(k,pre,item={}){return MK[k].fields.map(([f,lab,t])=>t==="check"
+  ?`<label class="chk"><input type="checkbox" id="${pre}${f}" ${item[f]?"checked":""}> ${lab}</label>`
+  :`<label>${lab}<input id="${pre}${f}" ${t==="number"?'type="number" step="0.01" class="num"':""} value="${esc(item[f]??"")}" ${f==="name"?"required":""}></label>`).join("")}
+
+// ----- small dialog (used for quick add and for editing movements) -----
+const modal=document.getElementById("modal");
+function openModal(title,body,onSave,saveLabel="Save"){
+  modal.hidden=false;modal.innerHTML=`<div class="mbox" role="dialog" aria-modal="true" aria-label="${esc(title)}"><form id="mForm" novalidate><h2>${esc(title)}</h2><div class="mgrid">${body}</div>
+    <div id="mMsg"></div><div class="acts" style="margin-top:12px"><button class="btn" type="submit">${esc(saveLabel)}</button><button class="btn ghost" type="button" id="mClose">Cancel</button></div></form></div>`;
+  addEyes(modal);modal.querySelector("input,select")?.focus();
+  document.getElementById("mClose").onclick=closeModal;
+  document.getElementById("mForm").addEventListener("submit",e=>{e.preventDefault();const err=onSave();if(err)document.getElementById("mMsg").innerHTML=`<div class="msg err">${esc(err)}</div>`;else closeModal()});
+}
+function closeModal(){modal.hidden=true;modal.innerHTML=""}
+modal.addEventListener("click",e=>{if(e.target===modal)closeModal()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!modal.hidden)closeModal()});
+// re-render the current view but keep what the user has typed
+function rerenderKeep(extra={}){
+  const snap={};app.querySelectorAll("input[id],select[id],textarea[id]").forEach(el=>snap[el.id]=el.type==="checkbox"?el.checked:el.value);
+  const open={};app.querySelectorAll("details[id]").forEach(d=>open[d.id]=d.open);
+  render();
+  app.querySelectorAll("details[id]").forEach(d=>{if(d.id in open)d.open=open[d.id]});
+  for(const [id,v] of Object.entries({...snap,...extra})){const el=document.getElementById(id);if(!el||el.disabled)continue;
+    if(el.type==="checkbox")el.checked=v;else if(el.tagName==="SELECT")ensureOpt(el,v);else el.value=v}
+  app.querySelectorAll("form").forEach(f=>f.dispatchEvent(new Event("input",{bubbles:true})));
+  Object.keys(extra).forEach(id=>document.getElementById(id)?.dispatchEvent(new Event("change",{bubbles:true})));
+}
+document.addEventListener("change",e=>{const sel=e.target;if(sel.tagName!=="SELECT"||sel.value!=="__add")return;
+  const k=sel.dataset.kind,id=sel.id;sel.value=sel.dataset.prev&&sel.dataset.prev!=="__add"?sel.dataset.prev:(sel.options[0]?.value??"");
+  openModal(`Add ${MK[k].one}`,itemFields(k,"qa_",k==="types"?{vault:false}:k==="brands"?{bar:1}:{}),()=>{
+    const o=readItem(k,"qa_"),err=itemErr(k,o,-1);if(err)return err;
+    S.master[k].push(o);syncMaster();save();setTimeout(()=>rerenderKeep({[id]:o.name}));return""},"Add");
+},true);
+document.addEventListener("focusin",e=>{if(e.target.tagName==="SELECT")e.target.dataset.prev=e.target.value},true);
+document.addEventListener("click",e=>{const b=e.target.closest("[data-manage]");if(!b)return;e.preventDefault();mKind=b.dataset.manage;mMsg="";go("master")});
+
+// ----- Master Data tab -----
+let mKind="suppliers",mMsg="";
+function vMaster(){
+  const L=S.master[mKind],F=MK[mKind].fields;
+  return `<section class="sec"><h2>Master Data</h2>
+   <p class="sm muted" style="margin-top:-4px">Every dropdown in the system reads from these lists. Renaming a value updates all existing records. A value that is in use cannot be deleted.</p>
+   <div class="seg" role="group">${Object.entries(MK).map(([k,v])=>`<button type="button" data-mk="${k}" aria-pressed="${k===mKind}">${v.label} <span class="sm muted">${S.master[k].length}</span></button>`).join("")}</div>
+   <div class="tbl"><table><thead><tr>${F.map(([,lab])=>`<th>${lab}</th>`).join("")}<th class="r">Used in</th><th></th></tr></thead><tbody>
+   ${L.map((x,i)=>{const u=usage(mKind,x.name);return `<tr>${F.map(([f,,t])=>`<td>${t==="check"?`<input type="checkbox" id="mf_${i}_${f}" ${x[f]?"checked":""} style="width:auto">`
+       :`<input id="mf_${i}_${f}" ${t==="number"?'type="number" step="0.01" class="num" style="max-width:130px"':""} value="${esc(x[f]??"")}">`}</td>`).join("")}
+     <td class="r num sm muted">${u} record${u===1?"":"s"}</td>
+     <td><div class="acts" style="justify-content:flex-end;flex-wrap:nowrap"><button type="button" class="btn ghost sm" data-ms="${i}">Save</button>
+       <button type="button" class="btn danger sm" data-md="${i}" ${u?`disabled title="In use — rename instead"`:""}>Delete</button></div></td></tr>`}).join("")||`<tr><td colspan="${F.length+2}" class="muted">No entries yet — add the first one below.</td></tr>`}
+   </tbody></table></div>
+   <form id="mAdd" class="calc" style="display:block;margin-top:12px"><b style="font-family:var(--font-body)">Add ${MK[mKind].one}</b>
+    <div class="row" style="margin-top:8px">${itemFields(mKind,"mn_",mKind==="brands"?{bar:1}:{})}</div>
+    <button class="btn" type="submit">Add</button></form>${mMsg}</section>`;
+}
+function bindMaster(){
+  const done=t=>{mMsg=t;syncMaster();save();render()};
+  app.querySelectorAll("[data-mk]").forEach(b=>b.addEventListener("click",()=>{mKind=b.dataset.mk;mMsg="";render()}));
+  document.getElementById("mAdd").addEventListener("submit",e=>{e.preventDefault();const o=readItem(mKind,"mn_"),err=itemErr(mKind,o,-1);
+    if(err)return done(`<div class="msg err">${esc(err)}</div>`);S.master[mKind].push(o);done(`<div class="msg ok">Added ${esc(o.name)}.</div>`)});
+  app.querySelectorAll("[data-ms]").forEach(b=>b.addEventListener("click",()=>{const i=+b.dataset.ms,x=S.master[mKind][i],o=readItem(mKind,`mf_${i}_`),err=itemErr(mKind,o,i);
+    if(err)return done(`<div class="msg err">${esc(err)}</div>`);
+    renameEverywhere(mKind,x.name,o.name);Object.assign(x,o);done(`<div class="msg ok">Saved ${esc(o.name)}.</div>`)}));
+  app.querySelectorAll("[data-md]").forEach(b=>b.addEventListener("click",()=>{const i=+b.dataset.md;
+    if(b.dataset.arm!=="1"){b.dataset.arm="1";b.textContent="Click again";return}
+    const n=S.master[mKind][i].name;S.master[mKind].splice(i,1);done(`<div class="msg ok">Deleted ${esc(n)}.</div>`)}));
+}
+
+// ----- edit a movement (sale, vaulting, adjustment) -----
+function openMoveEdit(id){const m=S.moves.find(x=>x.id===id);if(!m)return;
+  const sale=m.kind==="SALE",vault=m.kind==="VAULTING",adj=m.kind==="ADJ";
+  const body=`<label>Date<input type="date" id="em_date" value="${m.date}" required></label>
+   ${sale?`<label>Buyer${msel("em_buyer","buyers",{add:false})}</label>`:""}
+   ${vault?`<label>Customer${msel("em_cust","customers",{add:false,req:true})}</label>`:""}
+   <label>${sale?"Sales invoice no.":"Reference"}<input id="em_ref" value="${esc(m.ref||"")}"></label>
+   ${sale?`<label>Price (USD/oz)<input type="number" step="0.01" id="em_price" class="num" value="${m.price||""}"></label>
+     <label>P/D (USD/oz)<input type="number" step="0.01" id="em_pd" class="num" value="${m.pd||0}"></label>
+     <label>Avg cost (USD/oz)<input type="number" step="0.01" id="em_cost" class="num" value="${m.cost||""}"></label>`:""}
+   <label style="grid-column:1/-1">${adj?"Reason":"Note"}<input id="em_note" value="${esc(m.note||"")}" ${adj?"required":""}></label>
+   <p class="sm muted" style="grid-column:1/-1;margin:0">${esc(m.brand)} · ${fkg(m.kg)} kg${m.serials.length?` · ${m.serials.length} bars`:""}. To change brand, weight or bars, reverse this movement and record it again.</p>`;
+  openModal(`Edit ${sale?"sale":vault?"Vaulting move":"adjustment"}`,body,()=>{const g=i=>document.getElementById(i);
+    if(!g("em_date").value)return"Enter a date.";if(adj&&!g("em_note").value.trim())return"Enter a reason.";if(vault&&!g("em_cust").value)return"Choose a customer.";
+    m.date=g("em_date").value;m.ref=g("em_ref").value.trim();m.note=g("em_note").value.trim();m.edited=who();
+    if(sale){m.buyer=g("em_buyer").value;m.price=+g("em_price").value||0;m.pd=+g("em_pd").value||0;m.cost=+g("em_cost").value||0;const c=saleCalc(m.kg,m.price,m.pd,m.cost);m.value=c.value;m.margin=c.ok?c.margin:null}
+    if(vault){const c=g("em_cust").value;S.bars.forEach(x=>{if(m.serials.includes(x.serial)&&x.loc==="VAULTING")x.customer=c});m.customer=c}
+    save();render();return""});
+  if(sale)ensureOpt(document.getElementById("em_buyer"),m.buyer||SG_NAME);
+  if(vault)ensureOpt(document.getElementById("em_cust"),m.customer);
+}
+
 // ---------- views ----------
 let view="dash";
 const app=document.getElementById("app");
 document.getElementById("tabs").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;go(b.dataset.v)});
 function go(v){view=v;render();window.scrollTo(0,0)}
+// English validation messages instead of the browser's own (which follow the browser language)
+document.addEventListener("submit",e=>{const f=e.target;if(!(f instanceof HTMLFormElement))return;
+  f.querySelectorAll(".invalid").forEach(i=>i.classList.remove("invalid"));
+  const miss=[...f.querySelectorAll("[required]")].filter(i=>!i.disabled&&!String(i.value).trim());
+  let box=f.querySelector(".vmsg");if(box)box.innerHTML="";
+  if(!miss.length)return;e.preventDefault();e.stopImmediatePropagation();
+  miss.forEach(i=>i.classList.add("invalid"));miss[0].focus();
+  const names=[...new Set(miss.map(i=>(i.closest("label")?.childNodes[0]?.textContent||i.placeholder||i.id).trim()))];
+  if(!box){box=document.createElement("div");box.className="vmsg";f.appendChild(box)}
+  box.innerHTML=`<div class="msg err">Please fill in: ${esc(names.join(", "))}</div>`},true);
+document.addEventListener("input",e=>e.target.classList?.remove("invalid"),true);
+const noNative=root=>root.querySelectorAll("form").forEach(f=>f.noValidate=true);
 function render(){
   document.querySelectorAll("#tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.v===view));
   document.getElementById("stamp").textContent=`${S.lots.length} lots · ${S.moves.length} movements · ${S.bars.length} serials`;
-  app.innerHTML=({dash:vDash,lots:vLots,check:vCheck,pd:vPD,move:vMove,bars:vBars,ledger:vLedger,setup:vSetup})[view]();
-  addEyes(app);
-  ({dash:bindDash,lots:bindLots,check:bindCheck,pd:bindPD,move:bindMove,bars:bindBars,ledger:bindLedger,setup:bindSetup})[view]?.();
+  app.innerHTML=({dash:vDash,lots:vLots,check:vCheck,pd:vPD,move:vMove,bars:vBars,ledger:vLedger,master:vMaster,setup:vSetup})[view]();
+  addEyes(app);noNative(app);
+  ({dash:bindDash,lots:bindLots,check:bindCheck,pd:bindPD,move:bindMove,bars:bindBars,ledger:bindLedger,master:bindMaster,setup:bindSetup})[view]?.();
 }
 
 function vDash(){
-  const main=bal("MAIN"),vlt=bal("VAULTING"),sg=bal("SG"),rec=r3(main+vlt+sg);
+  const main=bal("MAIN"),vlt=bal("VAULTING"),sg=bal("SG"),rec=r3(S.moves.filter(m=>m.kind==="IN").reduce((a,m)=>a+m.kg,0));
   const sales=S.moves.filter(m=>m.kind==="SALE"),saleUsd=sales.reduce((a,m)=>a+(m.value||0),0);
   let stockVal=0;
   const rows=BNAMES.map(b=>{
@@ -306,22 +471,18 @@ function vDash(){
       <td class="r num">${fkg(v)}</td><td class="r num">${fkg(o)}</td>
       <td><div class="bar" title="${cov.toFixed(0)}%"><i style="width:${cov}%"></i></div><span class="sm muted num">${fkg(ser)} / ${fkg(m)} kg</span></td></tr>${op?`<tr class="lotdet"><td colspan="8">${stockCard(b)}</td></tr>`:""}`}).join("");
   const recent=[...S.moves].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8).map(moveRow).join("");
-  const iss=allIssues().filter(i=>i.sev==="bad"),nl=new Set(iss.map(i=>i.l.id)).size;
   return `
-  ${iss.length?`<section class="sec" style="border-color:var(--bad)"><div class="acts" style="justify-content:space-between">
-    <span><b class="bad">Check formulas</b> <span class="muted sm">Some recorded PI / CI amounts differ from the calculated values</span></span>
-    <button class="btn ghost sm" id="toCheck">View details</button></div></section>`:""}
   <section class="sec">
-    <div class="flow"><b>Supplier</b> → <span class="chip c-main">Main Stock</span> → <span class="chip c-out">Sell to SG</span> or <span class="chip c-vault">Vaulting (customer paid 100%)</span></div>
+    <div class="flow"><b>Supplier</b> → <span class="chip c-main">Main Stock</span> → <span class="chip c-out">Sell (SG and other buyers)</span> or <span class="chip c-vault">Vaulting (customer paid 100%)</span></div>
   </section>
   <div class="kpis">
     <div class="kpi main"><div class="lab">Main stock on hand</div><div class="v">${fkg(main)} <small>kg</small></div><div class="sm muted num">${fkg(r3(main*OZ))} oz · cost USD ${fusd(stockVal)}</div></div>
-    <div class="kpi out"><div class="lab">Sold to SG</div><div class="v">${fkg(sg)} <small>kg</small></div><div class="sm muted num">${sales.length} sales · USD ${fusd(saleUsd)}</div></div>
+    <div class="kpi out"><div class="lab">Sold</div><div class="v">${fkg(sg)} <small>kg</small></div><div class="sm muted num">${sales.length} sales · USD ${fusd(saleUsd)}</div></div>
     <div class="kpi vault"><div class="lab">In Vaulting</div><div class="v">${fkg(vlt)} <small>kg</small></div><div class="sm muted">Customer-owned, removed from stock</div></div>
     <div class="kpi"><div class="lab">Total received</div><div class="v">${fkg(rec)} <small>kg</small></div><div class="sm muted">${S.lots.length} lots</div></div>
   </div>
   <section class="sec"><h2>Stock by Brand</h2><p class="sm muted" style="margin-top:-6px">Click a brand to open its stock card — receipts and issues by date, plus stock adjustments</p><div class="tbl"><table>
-    <thead><tr><th>Brand</th><th class="r">Main kg</th><th class="r">oz</th><th class="r">Avg cost USD/oz</th><th class="r">Cost value USD</th><th class="r">Vaulting kg</th><th class="r">Sold SG kg</th><th>Main stock with serials</th></tr></thead>
+    <thead><tr><th>Brand</th><th class="r">Main kg</th><th class="r">oz</th><th class="r">Avg cost USD/oz</th><th class="r">Cost value USD</th><th class="r">Vaulting kg</th><th class="r">Sold kg</th><th>Main stock with serials</th></tr></thead>
     <tbody>${rows}</tbody>
     <tfoot><tr><td>Total</td><td class="r num">${fkg(main)}</td><td class="r num">${fkg(r3(main*OZ))}</td><td></td><td class="r num">${fusd(stockVal)}</td><td class="r num">${fkg(vlt)}</td><td class="r num">${fkg(sg)}</td><td></td></tr></tfoot>
   </table></div>
@@ -338,7 +499,7 @@ function stockCard(b){
     const k=m.kind in sum?m.kind:"OTHER";sum[k]=r3(sum[k]+(m.kind==="ADJ"?inn-out:inn+out));
     const l=m.lotId&&lotOf(m.lotId);
     const what=m.kind==="IN"?`${esc(l?.supplier||m.note)} · INV ${esc(m.ref)}${l?` · ${esc(l.type)} · P/D ${fsign(+l.pd||0)}`:""}`
-      :m.kind==="SALE"?`Sold to ${esc(SG_NAME)}${m.ref?` · Invoice ${esc(m.ref)}`:""}${m.value?` · USD ${fusd(m.value)}`:""}`
+      :m.kind==="SALE"?`Sold to ${esc(m.buyer||SG_NAME)}${m.ref?` · Invoice ${esc(m.ref)}`:""}${m.value?` · USD ${fusd(m.value)}`:""}`
       :m.kind==="VAULTING"?`Customer ${esc(m.customer||"—")}${m.ref?` · ${esc(m.ref)}`:""}${m.serials.length?` · ${m.serials.length} bars`:""}`
       :m.kind==="ADJ"?`${esc(m.note||"Stock adjustment")}${m.ref?` · ${esc(m.ref)}`:""}`:esc(m.note||"");
     const act=m.kind==="IN"&&l?`<button type="button" class="btn ghost sm" data-editlot="${l.id}">View lot</button>`
@@ -348,8 +509,8 @@ function stockCard(b){
   const unser=r3(bal("MAIN",b)-serialKg("MAIN",b));
   return `<div class="pdd" style="margin-top:0;border-top:0">
    <div class="acts" style="gap:18px;margin-bottom:10px;font-size:13px">
-    <span>Received <b class="num good">+${fkg(sum.IN)}</b></span><span>Sold SG <b class="num bad">−${fkg(sum.SALE)}</b></span>
-    <span>To Vaulting <b class="num bad">−${fkg(sum.VAULTING)}</b></span><span>Adjusted <b class="num">${fsign(sum.ADJ).replace(".00","")}</b></span>
+    <span>Received <b class="num good">+${fkg(sum.IN)}</b></span><span>Sold <b class="num bad">−${fkg(sum.SALE)}</b></span>
+    <span>To Vaulting <b class="num bad">−${fkg(sum.VAULTING)}</b></span><span>Adjusted <b class="num">${sum.ADJ>0?"+":""}${fkg(sum.ADJ)}</b></span>
     <span>Balance <b class="num">${fkg(bal("MAIN",b))} kg</b></span></div>
    <div class="tbl" style="max-height:420px;overflow:auto"><table><thead><tr><th>Date</th><th>Type</th><th>Details</th><th class="r">In kg</th><th class="r">Out kg</th><th class="r">Balance kg</th><th></th></tr></thead>
     <tbody>${rows||`<tr><td colspan="7" class="muted">No movements yet</td></tr>`}</tbody></table></div>
@@ -367,7 +528,7 @@ function stockCard(b){
 }
 function moveChip(m){
   if(m.kind==="ADJ")return m.to==="MAIN"?'<span class="chip c-in">Adjust +</span>':'<span class="chip c-out">Adjust −</span>';
-  return {IN:'<span class="chip c-in">Received</span>',VAULTING:'<span class="chip c-vault">To Vaulting</span>',SALE:'<span class="chip c-out">Sold to SG</span>',RETURN:'<span class="chip c-main">Returned to main</span>'}[m.kind]||esc(m.kind);
+  return {IN:'<span class="chip c-in">Received</span>',VAULTING:'<span class="chip c-vault">To Vaulting</span>',SALE:'<span class="chip c-out">Sold</span>',RETURN:'<span class="chip c-main">Returned to main</span>'}[m.kind]||esc(m.kind);
 }
 // reverse a movement; refuses when the gold has already moved on
 function undoMove(id){
@@ -377,7 +538,6 @@ function undoMove(id){
   S.moves=S.moves.filter(x=>x.id!==id);save();return"";
 }
 function bindDash(){
-  document.getElementById("toCheck")?.addEventListener("click",()=>go("check"));
   app.querySelectorAll(".brow").forEach(r=>{const t=()=>{dashOpen=dashOpen===r.dataset.b?null:r.dataset.b;adjMsg="";pendingDel=null;render()};
     r.addEventListener("click",t);r.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();t()}})});
   app.querySelectorAll("[data-editlot]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation();editId=b.dataset.editlot;go("lots")}));
@@ -395,15 +555,19 @@ function bindDash(){
     save();adjMsg=`<div class="msg ok">Saved: ${dir>0?"increased":"decreased"} ${esc(b)} by ${fkg(kg)} kg</div>`;render()});
 }
 function moveRow(m){
-  const who=m.kind==="VAULTING"&&m.customer?` · ${esc(m.customer)}`:m.kind==="ADJ"?` · ${esc(m.note||"")}`:"";
+  const who=m.kind==="SALE"?` · ${esc(m.buyer||SG_NAME)}`:m.kind==="VAULTING"&&m.customer?` · ${esc(m.customer)}`:m.kind==="ADJ"?` · ${esc(m.note||"")}`:"";
   const path=m.kind==="ADJ"?(m.to?"Adjustment → Main Stock":"Main Stock → Adjustment"):`${m.from?esc(locName(m.from))+" → ":""}${esc(locName(m.to))}`;
   return `<tr><td class="num sm">${fdate(m.date)}</td><td>${moveChip(m)}</td><td>${esc(m.brand)}</td><td class="r num">${fkg(m.kg)}</td><td class="sm muted">${path}${who}</td></tr>`;
 }
 
 // ----- Lots -----
-let editId=null;
+let editId=null,brFor=null,brDraft=[{b:"",k:""}];
+function brRowsHtml(){return brDraft.map((r,i)=>`<div class="brrow">
+  <label>Brand${msel("br_b_"+i,"brands",{blank:"— Select brand —"})}</label>
+  <label>Kg<input type="number" step="0.001" min="0" id="br_k_${i}" class="num" value="${esc(r.k)}"></label>
+  <button type="button" class="btn ghost sm" data-brx="${i}" aria-label="Remove this brand row">Remove</button></div>`).join("")}
 function vLots(){
-  const brandInputs=BNAMES.map((b,i)=>`<label>${esc(b)}<input type="number" step="0.001" min="0" id="lb${i}" class="num"></label>`).join("");
+  const key=editId||"new";if(brFor!==key){brFor=key;const ed=editId&&lotOf(editId);brDraft=ed?Object.entries(ed.brands).filter(e=>+e[1]>0).map(([b,k])=>({b,k:String(k)})):[];if(!brDraft.length)brDraft=[{b:"",k:""}]}
   const rows=[...S.lots].sort((a,b)=>b.date.localeCompare(a.date)).map(l=>{
     const c=calc(l),bad=f=>c.iss.find(i=>i.f===f);
     const chips=Object.entries(l.brands).filter(e=>e[1]>0).map(([b,k])=>{
@@ -425,13 +589,13 @@ function vLots(){
   return `
   <section class="sec"><details id="lotBox" ${editId?"open":""}><summary>${editId?"Edit lot":"+ Receive a new lot"}</summary>
    <form id="lotForm" style="margin-top:12px">
-    ${editId?`<p class="sm warn" style="margin-top:0">Editing ${esc(lotLabel(editId))} — only prices, documents and shipping can change (Kg and brands are locked because they are already in stock)</p>`:""}
+    ${editId?`<p class="sm warn" style="margin-top:0">Editing ${esc(lotLabel(editId))} — every field can change. Changing Kg or the brand split updates stock at once.</p>`:""}
     <div class="row">
      <label>Payment date<input type="date" id="lDate" required value="${today()}"></label>
-     <label>Supplier<input id="lSup" list="supList" required></label>
+     <label>Supplier ${mlink("suppliers")}${msel("lSup","suppliers",{req:true})}</label>
      <label>Total Kg<input type="number" step="0.001" id="lKg" required class="num"></label>
-     <label>Loco<select id="lLoco"><option>BKK</option><option>HK</option></select></label>
-     <label>TYPE<select id="lType"><option>LBMA</option><option>NGD</option><option>DGD</option></select></label>
+     <label>Loco ${mlink("locos")}${msel("lLoco","locos")}</label>
+     <label>TYPE ${mlink("types")}${msel("lType","types")}</label>
     </div>
     <div class="row">
      <label>P/D (USD/oz)<input type="number" step="0.01" id="lPd" class="num" value="0"></label>
@@ -453,11 +617,12 @@ function vLots(){
     <div class="calc" id="lCalc"></div>
     <div class="row">
      <label>Arrived BKK<input type="date" id="lArr"></label>
-     <label>Logistic<select id="lLog"><option>BRINKS</option><option>MALCA</option><option>Other</option></select></label>
+     <label>Logistic ${mlink("logistics")}${msel("lLog","logistics",{blank:"—"})}</label>
      <label>MAWB<input id="lMawb" placeholder="xxx-xxxx-xxxx or Loco BKK"></label>
     </div>
-    <p class="sm muted" style="margin:4px 0 6px">Brand split (kg) — must add up to Total Kg</p>
-    <div class="row">${brandInputs}</div>
+    <p class="sm muted" style="margin:4px 0 6px">Brands in this lot — choose each brand and its kg; together they must add up to Total Kg · ${mlink("brands")}</p>
+    <div id="brRows" class="brrows">${brRowsHtml()}</div>
+    <div style="margin:0 0 12px"><button type="button" class="btn ghost sm" id="brAdd">+ Add another brand</button></div>
     <div class="acts"><button class="btn" type="submit">${editId?"Save changes":"Receive into main stock"}</button>${editId?`<button class="btn ghost" type="button" id="lCancel">Cancel</button><button class="btn danger" type="button" id="lDel" style="margin-left:auto">Delete this lot</button>`:""}<span class="sm muted" id="lSumHint"></span></div>
     <div id="lotMsg"></div>
    </form></details></section>
@@ -473,13 +638,22 @@ function vLots(){
    <tbody>${rows}</tbody>
    <tfoot><tr><td colspan="3">Total ${S.lots.length} lots</td><td class="r num">${fkg(tot.kg)}<div class="sm muted">${fkg(r3(tot.oz))} oz</div></td><td></td><td></td><td class="r num">${fusd(tot.pi)}</td><td></td><td class="r num">${fusd(tot.cost)}<div class="sm muted">avg ${fusd(tot.oz?tot.cost/tot.oz:0)}/oz</div></td><td colspan="3"></td></tr></tfoot>
    </table></div></section>
-  <datalist id="supList">${suppliers().map(s=>`<option value="${esc(s)}">`).join("")}</datalist>`;
+`;
 }
 function bindLots(){
   const g=id=>document.getElementById(id),f=g("lotForm"),hint=g("lSumHint");
   const num=id=>+g(id).value||0;
-  const sumB=()=>r3(BNAMES.reduce((a,_,i)=>a+(+g("lb"+i).value||0),0));
-  const brandsOf=()=>{const o={};BNAMES.forEach((b,i)=>{const x=+g("lb"+i).value||0;if(x>0)o[b]=x});return o};
+  const readRows=()=>{brDraft=brDraft.map((_,i)=>({b:g("br_b_"+i)?.value||"",k:g("br_k_"+i)?.value||""}))};
+  const sumB=()=>r3(brDraft.reduce((a,r)=>a+(+r.k||0),0));
+  const brandsOf=()=>{const o={};brDraft.forEach(r=>{const x=+r.k||0;if(r.b&&x>0)o[r.b]=r3((o[r.b]||0)+x)});return o};
+  const dupBrand=()=>{const seen=new Set();for(const r of brDraft){if(!r.b||!(+r.k>0))continue;if(seen.has(r.b))return r.b;seen.add(r.b)}return""};
+  const missBrand=()=>brDraft.some(r=>!r.b&&+r.k>0);
+  const drawRows=()=>{g("brRows").innerHTML=brRowsHtml();fillRows();bindRows()};
+  const fillRows=()=>brDraft.forEach((r,i)=>ensureOpt(g("br_b_"+i),r.b));
+  const bindRows=()=>app.querySelectorAll("[data-brx]").forEach(b=>b.addEventListener("click",()=>{readRows();brDraft.splice(+b.dataset.brx,1);if(!brDraft.length)brDraft=[{b:"",k:""}];drawRows();preview()}));
+  fillRows();bindRows();
+  g("brAdd").addEventListener("click",()=>{readRows();brDraft.push({b:"",k:""});drawRows();g("br_b_"+(brDraft.length-1)).focus()});
+  f.addEventListener("input",readRows,true);f.addEventListener("change",readRows,true);
   const draft=()=>({supplier:g("lSup").value.trim(),kg:num("lKg"),loco:g("lLoco").value,price:num("lPrice"),pd:num("lPd"),fix:num("lFix"),frt:num("lFrt"),m:num("lM"),piRec:num("lPiRec"),ciRec:num("lCiRec"),brands:brandsOf()});
   const preview=()=>{
     const d=draft(),c=calc(d),s=sumB();
@@ -491,14 +665,16 @@ function bindLots(){
       <div><span>COST / OZ</span><b>${fusd(c.landed)}</b></div>
       <div><span>TOTAL COST USD</span><b>${fusd(c.cost)}</b></div>`;
   };
-  g("lLoco").addEventListener("change",()=>{const st=LOCO_STD[g("lLoco").value];if(st){g("lFix").value=st.fix.toFixed(2);g("lFrt").value=st.frt.toFixed(2)}preview()});
+  const applyStd=()=>{const st=LOCO_STD[g("lLoco").value];if(st){g("lFix").value=st.fix.toFixed(2);g("lFrt").value=st.frt.toFixed(2)}};
+  g("lLoco").addEventListener("change",()=>{applyStd();preview()});
+  if(!editId)applyStd();
   f.addEventListener("input",preview);
   const ed=editId&&lotOf(editId);
   if(ed){const set=(id,v)=>g(id).value=v??"";
     set("lDate",ed.date);set("lSup",ed.supplier);set("lKg",ed.kg);set("lLoco",ed.loco);set("lType",ed.type);set("lPrice",ed.price);set("lPd",ed.pd);
     set("lFix",ed.fix);set("lFrt",ed.frt);set("lM",ed.m||"");set("lInv",ed.inv);set("lPiRec",ed.piRec||"");set("lCi",ed.ciNo);set("lCiRec",ed.ciRec||"");
     set("lArr",ed.arrived);set("lLog",ed.logistic);set("lMawb",ed.mawb);
-    BNAMES.forEach((b,i)=>{set("lb"+i,ed.brands[b]||"");g("lb"+i).disabled=true});["lKg","lSup"].forEach(id=>g(id).disabled=true);
+    ["lSup","lLoco","lType","lLog"].forEach(id=>ensureOpt(g(id),ed[{lSup:"supplier",lLoco:"loco",lType:"type",lLog:"logistic"}[id]]));
     g("lCancel").addEventListener("click",()=>{editId=null;render()});
     g("lDel").addEventListener("click",()=>{const btn=g("lDel"),msg=g("lotMsg");
       if(S.bars.some(x=>x.lotId===ed.id&&x.loc!=="MAIN"))return msg.innerHTML='<div class="msg err">Cannot delete — bars from this lot have been sold or moved to Vaulting. Reverse those movements first.</div>';
@@ -515,21 +691,38 @@ function bindLots(){
   f.addEventListener("submit",e=>{e.preventDefault();const v=id=>g(id).value.trim(),msg=g("lotMsg");
     const fields={date:v("lDate"),loco:v("lLoco"),type:v("lType"),price:num("lPrice"),pd:num("lPd"),fix:num("lFix"),frt:num("lFrt"),m:num("lM"),
       inv:v("lInv"),piRec:num("lPiRec"),ciNo:v("lCi"),ciRec:num("lCiRec"),arrived:v("lArr"),logistic:v("lLog"),mawb:v("lMawb")};
+    readRows();
+    if(missBrand())return msg.innerHTML='<div class="msg err">Choose a brand for every row that has kg.</div>';
+    if(dupBrand())return msg.innerHTML=`<div class="msg err">${esc(dupBrand())} is chosen in more than one row. Use one row per brand.</div>`;
     if(ed){
-      if(ed.type!==fields.type&&fields.type!=="LBMA"&&S.bars.some(b=>b.lotId===ed.id&&b.loc==="VAULTING"))
-        return msg.innerHTML='<div class="msg err">Cannot change TYPE — bars from this lot are in Vaulting, which accepts LBMA only</div>';
-      Object.assign(ed,fields);
-      S.moves.forEach(m=>{if(m.lotId===ed.id&&m.kind==="IN"){m.date=ed.arrived||ed.date;m.ref=ed.inv}});
-      editId=null;save();render();return}
+      const kg=num("lKg"),brands=brandsOf(),sup=v("lSup");
+      if(ed.type!==fields.type&&!VAULT_TYPES.has(fields.type.toUpperCase())&&S.bars.some(b=>b.lotId===ed.id&&b.loc==="VAULTING"))
+        return msg.innerHTML='<div class="msg err">Cannot change TYPE — bars from this lot are in Vaulting, and the new TYPE is not allowed in Vaulting</div>';
+      if(!(kg>0))return msg.innerHTML='<div class="msg err">Total Kg must be greater than 0.</div>';
+      if(!(fields.price>0))return msg.innerHTML='<div class="msg err">Price PI must be greater than 0.</div>';
+      if(r3(Object.values(brands).reduce((a,b)=>a+b,0))!==r3(kg))return msg.innerHTML=`<div class="msg err">Brand split (${fkg(sumB())} kg) does not equal Total Kg (${fkg(kg)} kg)</div>`;
+      const warn=[];
+      for(const b of new Set([...Object.keys(ed.brands),...Object.keys(brands)])){const d=r3((brands[b]||0)-(+ed.brands[b]||0));if(!d)continue;
+        const nb=r3(bal("MAIN",b)+d);if(nb<0)warn.push(`${b}: main stock would become ${fkg(nb)} kg`);
+        const lb=r3(S.bars.filter(x=>x.lotId===ed.id&&x.brand===b).reduce((a,x)=>a+x.kg,0));if(lb>r3(brands[b]||0))warn.push(`${b}: ${fkg(lb)} kg of serials are recorded for this lot, more than the new ${fkg(brands[b]||0)} kg`)}
+      const sb=f.querySelector('button[type="submit"]');
+      if(warn.length&&sb.dataset.arm!=="1"){sb.dataset.arm="1";sb.textContent="Save anyway";return msg.innerHTML=`<div class="msg err"><b>Check before saving</b><br>${warn.map(esc).join("<br>")}<br>Click "Save anyway" to continue.</div>`}
+      const by=S.moves.find(m=>m.lotId===ed.id&&m.kind==="IN")?.by??ed.by;
+      Object.assign(ed,fields,{kg,supplier:sup,brands,edited:who()});
+      S.moves=S.moves.filter(m=>!(m.lotId===ed.id&&m.kind==="IN"));
+      for(const [b,k] of Object.entries(brands))S.moves.push({by,id:uid("M"),kind:"IN",date:ed.arrived||ed.date,brand:b,kg:+k,from:null,to:"MAIN",ref:ed.inv,lotId:ed.id,serials:[],note:ed.supplier});
+      editId=null;brFor=null;save();render();return}
     const kg=num("lKg"),brands=brandsOf();
+    if(!(kg>0))return msg.innerHTML='<div class="msg err">Total Kg must be greater than 0.</div>';
+    if(!(fields.price>0))return msg.innerHTML='<div class="msg err">Price PI must be greater than 0.</div>';
     if(r3(Object.values(brands).reduce((a,b)=>a+b,0))!==r3(kg))return msg.innerHTML=`<div class="msg err">Brand split (${fkg(sumB())} kg) does not equal Total Kg (${fkg(kg)} kg)</div>`;
-    addLot(S,{...fields,supplier:v("lSup"),kg,brands,src:"FORM"});save();render();});
+    addLot(S,{...fields,supplier:v("lSup"),kg,brands,src:"FORM"});brFor=null;save();render();});
   g("pasteBtn").addEventListener("click",()=>{
     const res=parsePaste(g("paste").value);
     if(res.err){g("pasteMsg").innerHTML=`<div class="msg err">${esc(res.err)}</div>`;return}
     let added=0,skipped=0;
     res.lots.forEach(l=>{if(S.lots.some(x=>x.inv===l.inv&&x.date===l.date&&r3(+x.kg)===r3(l.kg)&&x.type===l.type)){skipped++;return}addLot(S,l);added++});
-    save();render();
+    deriveMaster(S);save();render();
     g("pasteMsg").innerHTML=`<div class="msg ok">Imported ${added} lots · skipped ${skipped} duplicates${res.bad?` · ${res.bad} unreadable rows`:""}</div>`;
   });
 }
@@ -544,7 +737,7 @@ function parsePaste(txt){
   for(const ln of lines){const c=ln.split("\t");
     const date=pDate(c[1]),sup=(c[2]||"").replace(/​/g,"").trim(),kg=pNum(c[3]);
     if(!date||!sup||!kg){bad++;continue}
-    const brands={};BNAMES.forEach((b,i)=>{const x=pNum(c[21+i]);if(x>0)brands[b]=x});
+    const brands={};S.master.brands.forEach(b=>{if(b.col==null)return;const x=pNum(c[21+b.col]);if(x>0)brands[b.name]=x});
     if(!Object.keys(brands).length){bad++;continue}
     lots.push({date,supplier:sup,kg,loco:(c[5]||"").trim(),price:pNum(c[6]),pd:pNum(c[7]),fix:pNum(c[8]),frt:pNum(c[9]),inv:(c[10]||"").trim(),piRec:pNum(c[11]),m:pNum(c[12]),
       ciNo:(c[13]||"").trim(),ciRec:pNum(c[14]),arrived:pDate(c[15]),logistic:(c[16]||"").trim(),mawb:(c[18]||"").trim(),type:(c[19]||"").trim(),brands,src:"PASTE"})}
@@ -706,19 +899,19 @@ function vMove(){
   return `
   <section class="sec">
    <div class="seg" role="group">
-    <button type="button" data-k="SALE" aria-pressed="${sale}">1. Sell to SG</button>
+    <button type="button" data-k="SALE" aria-pressed="${sale}">1. Sell</button>
     <button type="button" data-k="VAULTING" aria-pressed="${!sale}">2. Move to Vaulting</button>
    </div>
-   <h2>${sale?`Sell gold from main stock to ${SG_NAME}`:"Move stock into customer Vaulting"}</h2>
+   <h2>${sale?"Sell gold from main stock":"Move stock into customer Vaulting"}</h2>
    <p class="sm muted" style="margin-top:-4px">${sale
      ?"Deducted from main stock. Selecting serials is optional."
      :"Use when the customer has paid 100% and leaves the gold with us · Allocated: bars must be selected by serial, LBMA lots only"}</p>
    <form id="mvForm">
     <div class="row">
      <label>Date<input type="date" id="mDate" value="${today()}" required></label>
-     ${sale?"":`<label>Customer<input id="mCust" required placeholder="Customer name / code"></label>`}
-     <label>Brand<select id="mBrand">${brandOpts}</select></label>
-     <label>Weight (kg)<input type="number" step="0.001" min="0" id="mKg" class="num" required ${sale?"":"readonly"}></label>
+     ${sale?`<label>Buyer ${mlink("buyers")}${msel("mBuyer","buyers")}</label>`:`<label>Customer ${mlink("customers")}${msel("mCust","customers",{req:true})}</label>`}
+     <label>Brand ${mlink("brands")}<select id="mBrand">${brandOpts}</select></label>
+     <label>Weight (kg)<input type="number" step="0.001" min="0" id="mKg" class="num" ${sale?"required":"readonly"}></label>
      <label>${sale?"Sales invoice no.":"Document / customer order no."}<input id="mRef"></label>
     </div>
     ${sale?`<div class="row">
@@ -746,7 +939,7 @@ function bindMove(){
   const calcVal=()=>{if(!sale)return;const c=saleCalc(+g("mKg").value||0,+g("mPrice").value||0,+g("mPd").value||0,+g("mCost").value||0);
     g("mCalc").innerHTML=`<div><span>OZ</span><b>${fkg(c.oz)}</b></div><div><span>SALE VALUE USD</span><b>${c.value?fusd(c.value):"—"}</b></div>
       <div><span>COST USD</span><b>${c.cost?fusd(c.costUsd):"—"}</b></div>
-      <div><span>GROSS MARGIN USD</span><b class="${c.margin<0?"bad":"good"}">${c.value?fsign(c.margin):"—"}</b>${c.value?`<small class="muted">${fsign(c.marginOz)} /oz</small>`:""}</div>`};
+      <div><span>GROSS MARGIN USD</span><b class="${c.margin<0?"bad":"good"}">${c.ok?fsign(c.margin):"—"}</b>${c.ok?`<small class="muted">${fsign(c.marginOz)} /oz</small>`:""}</div>`};
   const refresh=()=>{
     const b=g("mBrand").value,a=bal("MAIN",b),bars=pick(b),sk=serialKg("MAIN",b);
     g("mAvail").innerHTML=`<b>${esc(b)}</b> in main stock: <span class="num"><b>${fkg(a)}</b> kg</span> · with serials ${barsAt("MAIN",b).length} bars (${fkg(sk)} kg) · without serials ${fkg(r3(a-sk))} kg`
@@ -772,8 +965,8 @@ function bindMove(){
     if(r3(kg-selKg)>unser)return msg.innerHTML=`<div class="msg err">The part without selected serials (${fkg(r3(kg-selKg))} kg) exceeds gold without serials (${fkg(unser)} kg) — select more bars</div>`;
     const to=sale?"SG":"VAULTING";
     const m={by:who(),id:uid("M"),kind:mvKind,date:g("mDate").value,brand:b,kg,from:"MAIN",to,ref:g("mRef").value.trim(),serials:sels,note:g("mNote").value.trim()};
-    if(sale){m.price=+g("mPrice").value||0;m.pd=+g("mPd").value||0;m.cost=+g("mCost").value||0;const c=saleCalc(kg,m.price,m.pd,m.cost);m.value=c.value;m.margin=c.ok?c.margin:null}
-    else m.customer=g("mCust").value.trim();
+    if(sale){m.buyer=g("mBuyer").value||SG_NAME;m.price=+g("mPrice").value||0;m.pd=+g("mPd").value||0;m.cost=+g("mCost").value||0;const c=saleCalc(kg,m.price,m.pd,m.cost);m.value=c.value;m.margin=c.ok?c.margin:null}
+    else m.customer=g("mCust").value;
     S.moves.push(m);
     S.bars.forEach(x=>{if(sels.includes(x.serial)){x.loc=to;if(!sale)x.customer=m.customer}});
     save();render();g("mvMsg").innerHTML=`<div class="msg ok">Saved: ${esc(b)} ${fkg(kg)} kg → ${esc(locName(to))}${m.customer?" · "+esc(m.customer):""}</div>`;
@@ -798,8 +991,8 @@ function vBars(){
    </form></section>
   <section class="sec"><div class="acts" style="justify-content:space-between;margin-bottom:8px"><h2 style="margin:0">Bar Register</h2>
    <input id="bQ" placeholder="Search serial / brand / customer" value="${esc(sessionQ)}" style="max-width:260px"></div>
-   ${S.bars.length?`<div class="tbl"><table><thead><tr><th>Serial</th><th>Brand</th><th class="r">kg</th><th>Location</th><th>Lot</th></tr></thead><tbody>
-   ${list.map(b=>`<tr><td class="num">${esc(b.serial)}</td><td>${esc(b.brand)}</td><td class="r num">${fkg(b.kg)}</td><td><span class="chip ${locCls(b.loc)}">${esc(locName(b.loc))}</span>${b.customer?`<div class="sm muted">${esc(b.customer)}</div>`:""}</td><td class="sm muted">${esc(lotLabel(b.lotId))} · ${esc(lotOf(b.lotId)?.type||"")}</td></tr>`).join("")}
+   ${S.bars.length?`<div class="tbl"><table><thead><tr><th>Serial</th><th>Brand</th><th class="r">kg</th><th>Location</th><th>Lot</th><th></th></tr></thead><tbody>
+   ${list.map(b=>`<tr><td class="num">${esc(b.serial)}</td><td>${esc(b.brand)}</td><td class="r num">${fkg(b.kg)}</td><td><span class="chip ${locCls(b.loc)}">${esc(locName(b.loc))}</span>${b.customer?`<div class="sm muted">${esc(b.customer)}</div>`:""}</td><td class="sm muted">${esc(lotLabel(b.lotId))} · ${esc(lotOf(b.lotId)?.type||"")}</td><td><div class="acts" style="flex-wrap:nowrap;justify-content:flex-end"><button type="button" class="btn ghost sm" data-eb="${esc(b.serial)}">Edit</button>${b.loc==="MAIN"?`<button type="button" class="btn danger sm" data-xb="${esc(b.serial)}">Delete</button>`:""}</div></td></tr>`).join("")}
    </tbody></table></div>`:`<p class="muted">No serials yet — choose a lot above and paste serial numbers to start</p>`}
   </section>`;
 }
@@ -811,8 +1004,16 @@ function bindBars(){
     g("bInfo").innerHTML=`This lot has ${esc(b)} <b class="num">${fkg(tot)} kg</b> ≈ ${Math.round(tot/BARKG[b])} bars · ${have.length} recorded`};
   g("bLot").addEventListener("change",fillBrands);g("bBrand").addEventListener("change",info);fillBrands();
   g("bQ").addEventListener("input",e=>{sessionQ=e.target.value;const p=e.target.selectionStart;render();const i=g("bQ");i.focus();i.setSelectionRange(p,p)});
+  app.querySelectorAll("[data-eb]").forEach(btn=>btn.addEventListener("click",()=>{const old=btn.dataset.eb,bar=S.bars.find(x=>x.serial===old);if(!bar)return;
+    openModal("Edit serial",`<label>Serial number<input id="eb_s" value="${esc(old)}" required></label><p class="sm muted" style="margin:0;grid-column:1/-1">${esc(bar.brand)} · ${esc(locName(bar.loc))} · ${esc(lotLabel(bar.lotId))}</p>`,()=>{
+      const n=document.getElementById("eb_s").value.trim();if(!n)return"Enter a serial number.";if(n!==old&&S.bars.some(x=>x.serial===n))return`Serial ${n} already exists.`;
+      bar.serial=n;S.moves.forEach(m=>{m.serials=m.serials.map(x=>x===old?n:x)});save();render();return""})}));
+  app.querySelectorAll("[data-xb]").forEach(btn=>btn.addEventListener("click",()=>{
+    if(btn.dataset.arm!=="1"){btn.dataset.arm="1";btn.textContent="Click again";return}
+    S.bars=S.bars.filter(x=>x.serial!==btn.dataset.xb);save();render()}));
   g("barForm").addEventListener("submit",e=>{e.preventDefault();const msg=g("barMsg");
     const l=lotOf(g("bLot").value),b=g("bBrand").value,w=BARKG[b];
+    if(!l||!b||!w)return msg.innerHTML='<div class="msg err">Choose a lot and brand first.</div>';
     const sers=[...new Set(g("bSer").value.split(/[\n,;\t]+/).map(s=>s.trim()).filter(Boolean))];
     if(!sers.length)return msg.innerHTML='<div class="msg err">Enter at least one serial</div>';
     const dup=sers.filter(s=>S.bars.some(x=>x.serial===s));
@@ -831,17 +1032,19 @@ function vLedger(){
   const ms=[...S.moves].filter(m=>ledFilter==="ALL"||m.kind===ledFilter).sort((a,b)=>b.date.localeCompare(a.date));
   const opt=(v,t)=>`<option value="${v}" ${ledFilter===v?"selected":""}>${t}</option>`;
   return `<section class="sec"><div class="acts" style="justify-content:space-between;margin-bottom:8px"><h2 style="margin:0">Movement Ledger</h2>
-   <select id="ledF" style="max-width:220px">${opt("ALL","All")}${opt("IN","Received")}${opt("SALE","Sold to SG")}${opt("VAULTING","To Vaulting")}${opt("ADJ","Adjustments")}</select></div>
+   <select id="ledF" style="max-width:220px">${opt("ALL","All")}${opt("IN","Received")}${opt("SALE","Sold")}${opt("VAULTING","To Vaulting")}${opt("ADJ","Adjustments")}</select></div>
    <div class="tbl"><table><thead><tr><th>Date</th><th>Type</th><th>Brand</th><th class="r">kg</th><th>From → To</th><th>Reference</th><th class="r">Value USD</th><th class="r">Gross margin</th><th>Serial</th><th></th></tr></thead><tbody>
    ${ms.map(m=>{const r=moveRow(m).replace(/<\/tr>$/,"");return r+`<td class="sm">${esc(m.ref)}<div class="muted">${esc(m.note)}</div>${m.by?`<div class="muted">by ${esc(m.by)}</div>`:""}</td>
      <td class="r num sm">${m.value?fusd(m.value)+`<div class="muted">@ ${fusd(m.price)} ${fsign(m.pd)}</div>`:"—"}</td>
      <td class="r num sm">${m.value&&m.margin!=null?`<span class="${m.margin<0?"bad":"good"}">${fsign(m.margin)}</span><div class="muted">cost ${fusd(m.cost)}/oz</div>`:"—"}</td>
-     <td class="sm num">${m.serials.length?m.serials.length+" bars":"—"}</td><td>${m.kind!=="IN"?`<button class="btn danger sm" data-del="${m.id}">Reverse</button>`:""}</td></tr>`}).join("")}
+     <td class="sm num">${m.serials.length?m.serials.length+" bars":"—"}</td><td><div class="acts" style="flex-wrap:nowrap;justify-content:flex-end">${m.kind==="IN"?`<button class="btn ghost sm" data-editlot="${m.lotId}">Edit lot</button>`:`<button class="btn ghost sm" data-em="${m.id}">Edit</button><button class="btn danger sm" data-del="${m.id}">Reverse</button>`}</div></td></tr>`}).join("")}
    </tbody></table></div><div id="ledMsg"></div></section>`;
 }
 let pendingDel=null;
 function bindLedger(){
   document.getElementById("ledF").addEventListener("change",e=>{ledFilter=e.target.value;render()});
+  app.querySelectorAll("[data-em]").forEach(b=>b.addEventListener("click",()=>openMoveEdit(b.dataset.em)));
+  app.querySelectorAll("[data-editlot]").forEach(b=>b.addEventListener("click",()=>{editId=b.dataset.editlot;go("lots")}));
   document.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
     const id=b.dataset.del;
     if(pendingDel!==id){pendingDel=id;b.textContent="Click again to confirm";return}
@@ -854,13 +1057,13 @@ function bindLedger(){
 // ----- Setup -----
 function vSetup(){
   return vAccounts()+`
-  <section class="sec"><h2>Data on this device</h2>
+  ${me.role!=="admin"?"":`<section class="sec"><h2>Data on this device</h2>
    <p class="sm muted">This prototype stores data in this browser only. Use it to test the flow before IT builds the production system · Sales buyer: ${esc(SG_NAME)}</p>
-   <div class="acts"><button class="btn danger" id="reset">Reset to IMPORT sheet data</button></div></section>`;
+   <div class="acts"><button class="btn danger" id="reset">Reset to IMPORT sheet data</button></div></section>`}`;
 }
 function bindSetup(){
   bindAccounts();
-  const r=document.getElementById("reset");
+  const r=document.getElementById("reset");if(!r)return;
   r.addEventListener("click",()=>{if(r.dataset.arm){S=freshState();save();view="dash";render()}else{r.dataset.arm=1;r.textContent="Click again — all movements and serials will be erased"}});
 }
 
@@ -891,7 +1094,7 @@ function addEyes(root){root.querySelectorAll('input[type="password"]:not([data-e
   w.appendChild(b)})}
 const gate=document.getElementById("gate");
 function shell(inner){document.body.classList.remove("in");gate.hidden=false;
-  gate.innerHTML=`<div class="gate-card"><div class="gate-brand">Gold Stock <small>Ledger</small></div><p class="sm muted" style="margin:2px 0 18px">Gold Star Trading · staff sign-in</p>${inner}</div>`;addEyes(gate)}
+  gate.innerHTML=`<div class="gate-card"><div class="gate-brand">Gold Stock <small>Ledger</small></div><p class="sm muted" style="margin:2px 0 18px">Gold Star Trading · staff sign-in</p>${inner}</div>`;addEyes(gate);noNative(gate)}
 function showLogin(msg){
   const fresh=U.length===1&&U[0].must&&U[0].u==="admin";
   shell(`<form id="lgForm" class="gate-form" novalidate>
@@ -954,10 +1157,10 @@ function vAccounts(){
     <button class="btn" type="submit">Change password</button></div></form><div id="myPwMsg"></div></section>
   ${admin?`<section class="sec"><h2>Users</h2>
    <div class="tbl"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>
-   ${U.map((u,i)=>`<tr><td class="num">${esc(u.u)}</td><td>${esc(u.name)}</td><td>${u.role==="admin"?"Admin":"Staff"}</td>
+   ${U.map((u,i)=>`<tr><td class="num">${esc(u.u)}</td><td><input id="un${i}" value="${esc(u.name)}" style="min-width:130px"></td><td><select id="ur${i}"><option value="staff">Staff</option><option value="admin" ${u.role==="admin"?"selected":""}>Admin</option></select></td>
      <td class="sm">${u.must?'<span class="warn">Must set password at next sign-in</span>':'<span class="muted">Active</span>'}</td>
      <td><div class="acts" style="justify-content:flex-end"><input id="rp${i}" type="password" placeholder="Temporary password" style="width:170px" autocomplete="new-password">
-      <button type="button" class="btn ghost sm" data-rp="${i}">Reset password</button>
+      <button type="button" class="btn ghost sm" data-su="${i}">Save</button><button type="button" class="btn ghost sm" data-rp="${i}">Reset password</button>
       ${u.u!==me.u?`<button type="button" class="btn danger sm" data-du="${i}">Delete</button>`:""}</div></td></tr>`).join("")}
    </tbody></table></div>
    <form id="addUser" class="calc" style="display:block;margin-top:12px"><b style="font-family:var(--font-body)">Add a user</b>
@@ -985,6 +1188,10 @@ function bindAccounts(){
     if(U.some(x=>x.u===u))return done(`<div class="msg err">Username ${esc(u)} already exists.</div>`);
     if(g("nuP").value.length<8)return done('<div class="msg err">Temporary password needs at least 8 characters.</div>');
     U.push(await mkUser(u,g("nuN").value.trim(),g("nuR").value,g("nuP").value));done(`<div class="msg ok">Added ${esc(u)}.</div>`)});
+  app.querySelectorAll("[data-su]").forEach(b=>b.addEventListener("click",()=>{const i=+b.dataset.su,u=U[i],name=g("un"+i).value.trim(),role=g("ur"+i).value;
+    if(!name)return done('<div class="msg err">Enter a name.</div>');
+    if(u.role==="admin"&&role!=="admin"&&U.filter(x=>x.role==="admin").length<2)return done('<div class="msg err">Keep at least one admin.</div>');
+    u.name=name;u.role=role;if(u===me)document.getElementById("who").textContent=`${me.name} · ${me.role==="admin"?"Admin":"Staff"}`;done(`<div class="msg ok">Saved ${esc(u.u)}.</div>`)}));
   app.querySelectorAll("[data-rp]").forEach(b=>b.addEventListener("click",async()=>{const i=+b.dataset.rp,pw=g("rp"+i).value;
     if(pw.length<8)return done('<div class="msg err">Type a temporary password of at least 8 characters next to the user first.</div>');
     await setPw(U[i],pw);U[i].must=true;done(`<div class="msg ok">Password reset for ${esc(U[i].u)}. They must set a new one at next sign-in.</div>`)}));
@@ -996,5 +1203,5 @@ function bindAccounts(){
 
 boot();
 </script>
-
-</body></html>
+</body>
+</html>
